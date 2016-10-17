@@ -152,6 +152,79 @@ func PeakSolarHours(day int, lon float64, lat float64, alt float64) float64 {
 	return sum / 60.0 / 24.0
 }
 
+// Location holds information about where in the world we are. City and State
+// are US specific.
+type Location struct {
+	Lat, Lon, Alt float64
+	City          string
+	State         string
+}
+
+func stringInSlice(a string, list []string) bool {
+	for _, s := range list {
+		if a == s {
+			return true
+		}
+	}
+	return false
+}
+
+func cityStateFromGeocodingResult(resp []maps.GeocodingResult) (string, string) {
+	var city, state string
+	for _, component := range resp[0].AddressComponents {
+		if stringInSlice("locality", component.Types) && stringInSlice("political", component.Types) {
+			city = component.ShortName
+		}
+
+		if stringInSlice("political", component.Types) && stringInSlice("administrative_area_level_1", component.Types) {
+			state = component.LongName
+		}
+	}
+	return city, state
+}
+
+// FindLocation finds a given location using googl'e geocoding api's and
+// returns a Location struct or an error.
+func FindLocation(apiKey string, location string) (Location, error) {
+	l := Location{}
+
+	c, err := maps.NewClient(maps.WithAPIKey(apiKey))
+	if err != nil {
+		return l, err
+	}
+	req := &maps.GeocodingRequest{
+		Address: location,
+	}
+
+	resp, err := c.Geocode(context.Background(), req)
+	if err != nil {
+		return l, err
+	}
+
+	l.Lat = resp[0].Geometry.Location.Lat
+	l.Lon = resp[0].Geometry.Location.Lng
+	l.City, l.State = cityStateFromGeocodingResult(resp)
+
+	ereq := &maps.ElevationRequest{
+		Locations: []maps.LatLng{
+			maps.LatLng{
+				Lat: l.Lat,
+				Lng: l.Lon,
+			},
+		},
+	}
+
+	elevations, err := c.Elevation(context.Background(), ereq)
+	if err != nil {
+		// TODO: maybe partial returns are okay...?
+		return l, err
+	}
+
+	l.Alt = elevations[0].Elevation
+
+	return l, nil
+}
+
 // LatLonAltForLocation returns the latitude, longitude, and altitude for a
 // location specified in plain text. This uses the google maps api.
 func LatLonAltForLocation(apiKey string, location string) (float64, float64, float64) {
