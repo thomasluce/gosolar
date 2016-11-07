@@ -194,7 +194,7 @@ func PeakSolarHours(day int, loc Location) float64 {
 		sum += IG(i, day, loc)
 	}
 
-	return sum / 60.0 / 24.0
+	return sum / 60.0
 }
 
 func stringInSlice(a string, list []string) bool {
