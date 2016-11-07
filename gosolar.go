@@ -8,6 +8,10 @@ import (
 )
 
 const DegToRad = math.Pi / 180.0
+const RadToDeg = 180.0 / math.Pi
+
+const Circle = DegToRad * 360.0
+const DaysPerYear = 365.0
 
 // Location holds information about where in the world we are. City and State
 // are US specific.
@@ -18,16 +22,19 @@ type Location struct {
 }
 
 // LSTM returns the Local Standard Time Meridian based on your difference in time
-// from GMT in hours.
+// from GMT in hours. It returns in radians
 func LSTM(timezone float64) float64 {
-	return 15 * timezone
+	return DegToRad * 15.0 * timezone
 }
 
 // EoT returns the Equation of Time for the given day of the year. This is the
 // number of minutes off, for a given day of the year, solar time is from
-// clock-time based on orbital eccentricity and axial tilt.
+// clock-time based on orbital eccentricity and axial tilt. It is an imperical
+// equation based on observation and fitting to that. Given that, the magic
+// co-efficients are just that: magic and unit-less. It is also regardless of
+// location; we factor that in elsewhere.
 func EoT(day int) float64 {
-	b := (360.0 / 365.0) * (float64(day) - 81.0)
+	b := (Circle / DaysPerYear) * (float64(day) - 81.0)
 	return (9.87 * math.Sin(2*b)) - (7.53 * math.Cos(b)) - (1.5 * math.Sin(b))
 }
 
@@ -48,67 +55,94 @@ func TimezoneFor(loc Location) float64 {
 
 // TCF returns the Time Correction Factor. The Time Correction Factor is the
 // number of minutes off from solar time, for a given day of the year, the
-// clock will be based on longitude and other factors.
+// clock will be based on longitude and other factors. Put another way, 12 noon
+// solar time is when the sun is at its zenith regardless of what the
+// wall-clock says. This function returns the number of minutes different
+// between zenith-time and 12:00 noon.
 func TCF(day int, loc Location) float64 {
-	return 4*(loc.Lon-LSTM(TimezoneFor(loc))) + EoT(day)
+	return 4*(DegToRad*loc.Lon-LSTM(TimezoneFor(loc))) + EoT(day)
 }
 
 // LST returns the local solar time. localTime is in minutes from midnight.
 func LST(localTime int, day int, loc Location) float64 {
-	return float64(localTime) + (TCF(day, loc) / 60.0)
+	return float64(localTime) + TCF(day, loc)/60.0
 }
 
 // HRA returns the Hour Angle. The Hour Angle is the angle that the sun moves across
 // the sky on a given day of the year. By definition it is 0 degrees at noon,
-// negative in the morning, and positive in the afternoon.
+// negative in the morning, and positive in the afternoon. This returns in radians
 func HRA(localTime int, day int, loc Location) float64 {
-	return 15 * (LST(localTime, day, loc) - 12.0)
+	lst := LST(localTime, day, loc)
+	return DegToRad * 0.25 * (lst - 720)
 }
 
-// Declanation returns the declanation angle of the sun on a given day of the year.
-func Declanation(day int) float64 {
-	return 23.45 * math.Sin((360.0/365.0)*(float64(day)-81.0))
+// Declination returns the declanation angle of the sun on a given day of the
+// year. The declanation angle is the angle of tilt of the Earth's axis
+// relative to its orbital plane.
+func Declination(day int) float64 {
+	return DegToRad * 23.45 * math.Sin((Circle/DaysPerYear)*(float64(day)-81.0))
 }
 
 // Elevation returns the elevation angle of the sun given a location, time of day, and day of
-// year.
+// year. The angle is measured relative to the horizontal, and is defined as 0
+// at sunrise and 90 degrees when directly overhead (at the equator on an
+// equinox). This function returns in radians.
 func Elevation(localTime int, day int, loc Location) float64 {
-	sinDsinLat := math.Sin(Declanation(day)) * math.Sin(loc.Lat)
-	cosDcosLat := math.Cos(Declanation(day)) * math.Cos(loc.Lat)
+	sinDsinLat := math.Sin(Declination(day)) * math.Sin(DegToRad*loc.Lat)
+	cosDcosLat := math.Cos(Declination(day)) * math.Cos(DegToRad*loc.Lat)
 	cosH := math.Cos(HRA(localTime, day, loc))
 
-	s := math.Sin(sinDsinLat + (cosDcosLat * cosH))
-	return 1.0 / s
+	s := math.Asin(sinDsinLat + (cosDcosLat * cosH))
+	return s
 }
 
 // Zenith returns the zenith angle, which is the same as elevation, but
 // measured from the vertical instead of from the horizontal (as with
 // elevation)
 func Zenith(localTime int, day int, loc Location) float64 {
-	return 90.0 - Elevation(localTime, day, loc)
+	return DegToRad*90.0 - Elevation(localTime, day, loc)
 }
 
 // Azimuth returns the azimuth of the sun in the sky given a particular
 // location and time of day and year. This is the compass reading of the sun
 // projected onto a plane from above. 0 degrees is N, and 180 degrees is S.
-// This is shifted somewhat for the solar afternoon.
+// This is shifted somewhat for the solar afternoon. Returned in Radians.
 func Azimuth(localTime int, day int, loc Location) float64 {
-	theta := Zenith(localTime, day, loc)
-	sinDec := math.Sin(Declanation(day))
-	cosTheta := math.Cos(theta)
-	cosDec := math.Cos(Declanation(day))
-	sinTheta := math.Sin(theta)
-	cosH := math.Cos(HRA(localTime, day, loc))
-	a := Elevation(localTime, day, loc)
+	dec := Declination(day)
+	lat := loc.Lat * DegToRad
+	hourAngle := HRA(localTime, day, loc)
+	zenith := Zenith(localTime, day, loc)
 
-	azPrime := math.Cos(((sinDec * cosTheta) - (cosDec * sinTheta * cosH)) / a)
-	az := 1.0 / azPrime
+	cosTheta := math.Sin(dec) * math.Cos(lat)
+	cosTheta -= math.Cos(hourAngle) * math.Cos(dec) * math.Sin(lat)
+	cosTheta /= math.Sin(zenith)
+	theta := math.Acos(cosTheta)
 
-	if LST(localTime, day, loc) < 12 || HRA(localTime, day, loc) < 0 {
-		return az
+	if LST(localTime, day, loc) < 720 {
+		return theta
 	}
+	return DegToRad*360 - theta
 
-	return 360.0 - az
+	return theta
+
+	/*
+		theta := Zenith(localTime, day, loc)
+		sinDec := math.Sin(Declination(day))
+		cosTheta := math.Cos(theta)
+		cosDec := math.Cos(Declination(day))
+		sinTheta := math.Sin(theta)
+		cosH := math.Cos(HRA(localTime, day, loc))
+		a := Elevation(localTime, day, loc)
+
+		v := (sinDec*cosTheta - cosDec*sinTheta*cosH) / a
+		az := 1.0 / math.Cos(v)
+
+		if LST(localTime, day, loc) < 12 || HRA(localTime, day, loc) < 0 {
+			return az
+		}
+
+		return DegToRad*360.0 - az
+	*/
 }
 
 // AM returns the Air Mass, which is the amount of air that a beam of light
@@ -117,12 +151,12 @@ func Azimuth(localTime int, day int, loc Location) float64 {
 // atmosphere to sea-level at noon being equal to 1.
 func AM(localTime int, day int, loc Location) float64 {
 	theta := Zenith(localTime, day, loc)
-	x := 96.07995 - theta
+	x := DegToRad*96.07995 - theta
 	if x < 0.0 {
 		return 0
 	}
 
-	d := math.Cos(theta) + (0.50572 * math.Pow(x, -1.6364))
+	d := math.Cos(theta) + (DegToRad * 0.50572 * math.Pow(x, -1.6364))
 	return 1.0 / d
 }
 
