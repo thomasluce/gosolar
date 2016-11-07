@@ -32,7 +32,7 @@ func TimezoneFor(lon float64) float64 {
 		lon = -(lon - 180.0)
 	}
 
-	return -(lon / 15.0)
+	return lon / 15.0
 }
 
 // TCF returns the Time Correction Factor. The Time Correction Factor is the
