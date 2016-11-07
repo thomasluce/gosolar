@@ -7,6 +7,16 @@ import (
 	"googlemaps.github.io/maps"
 )
 
+const DegToRad = math.Pi / 180.0
+
+// Location holds information about where in the world we are. City and State
+// are US specific.
+type Location struct {
+	Lat, Lon, Alt float64
+	City          string
+	State         string
+}
+
 // LSTM returns the Local Standard Time Meridian based on your difference in time
 // from GMT in hours.
 func LSTM(timezone float64) float64 {
@@ -27,7 +37,8 @@ func EoT(day int) float64 {
 // the idea that the earth rotates 15 degrees per hour. Even though it will be
 // off by ~5 seconds of angle, we'll just assume Greenwhich is at 0 degrees
 // longitude.
-func TimezoneFor(lon float64) float64 {
+func TimezoneFor(loc Location) float64 {
+	lon := loc.Lon
 	if lon > 180.0 {
 		lon = -(lon - 180.0)
 	}
@@ -38,20 +49,20 @@ func TimezoneFor(lon float64) float64 {
 // TCF returns the Time Correction Factor. The Time Correction Factor is the
 // number of minutes off from solar time, for a given day of the year, the
 // clock will be based on longitude and other factors.
-func TCF(day int, lon float64) float64 {
-	return 4*(lon-LSTM(TimezoneFor(lon))) + EoT(day)
+func TCF(day int, loc Location) float64 {
+	return 4*(loc.Lon-LSTM(TimezoneFor(loc))) + EoT(day)
 }
 
 // LST returns the local solar time. localTime is in minutes from midnight.
-func LST(localTime int, day int, lon float64) float64 {
-	return float64(localTime) + (TCF(day, lon) / 60.0)
+func LST(localTime int, day int, loc Location) float64 {
+	return float64(localTime) + (TCF(day, loc) / 60.0)
 }
 
 // HRA returns the Hour Angle. The Hour Angle is the angle that the sun moves across
 // the sky on a given day of the year. By definition it is 0 degrees at noon,
 // negative in the morning, and positive in the afternoon.
-func HRA(localTime int, day int, lon float64) float64 {
-	return 15 * (LST(localTime, day, lon) - 12.0)
+func HRA(localTime int, day int, loc Location) float64 {
+	return 15 * (LST(localTime, day, loc) - 12.0)
 }
 
 // Declanation returns the declanation angle of the sun on a given day of the year.
@@ -61,10 +72,10 @@ func Declanation(day int) float64 {
 
 // Elevation returns the elevation angle of the sun given a location, time of day, and day of
 // year.
-func Elevation(localTime int, day int, lon float64, lat float64) float64 {
-	sinDsinLat := math.Sin(Declanation(day)) * math.Sin(lat)
-	cosDcosLat := math.Cos(Declanation(day)) * math.Cos(lat)
-	cosH := math.Cos(HRA(localTime, day, lon))
+func Elevation(localTime int, day int, loc Location) float64 {
+	sinDsinLat := math.Sin(Declanation(day)) * math.Sin(loc.Lat)
+	cosDcosLat := math.Cos(Declanation(day)) * math.Cos(loc.Lat)
+	cosH := math.Cos(HRA(localTime, day, loc))
 
 	s := math.Sin(sinDsinLat + (cosDcosLat * cosH))
 	return 1.0 / s
@@ -73,27 +84,27 @@ func Elevation(localTime int, day int, lon float64, lat float64) float64 {
 // Zenith returns the zenith angle, which is the same as elevation, but
 // measured from the vertical instead of from the horizontal (as with
 // elevation)
-func Zenith(localTime int, day int, lon float64, lat float64) float64 {
-	return 90.0 - Elevation(localTime, day, lon, lat)
+func Zenith(localTime int, day int, loc Location) float64 {
+	return 90.0 - Elevation(localTime, day, loc)
 }
 
 // Azimuth returns the azimuth of the sun in the sky given a particular
 // location and time of day and year. This is the compass reading of the sun
 // projected onto a plane from above. 0 degrees is N, and 180 degrees is S.
 // This is shifted somewhat for the solar afternoon.
-func Azimuth(localTime int, day int, lon float64, lat float64) float64 {
-	theta := Zenith(localTime, day, lon, lat)
+func Azimuth(localTime int, day int, loc Location) float64 {
+	theta := Zenith(localTime, day, loc)
 	sinDec := math.Sin(Declanation(day))
 	cosTheta := math.Cos(theta)
 	cosDec := math.Cos(Declanation(day))
 	sinTheta := math.Sin(theta)
-	cosH := math.Cos(HRA(localTime, day, lon))
-	a := Elevation(localTime, day, lon, lat)
+	cosH := math.Cos(HRA(localTime, day, loc))
+	a := Elevation(localTime, day, loc)
 
 	azPrime := math.Cos(((sinDec * cosTheta) - (cosDec * sinTheta * cosH)) / a)
 	az := 1.0 / azPrime
 
-	if LST(localTime, day, lon) < 12 || HRA(localTime, day, lon) < 0 {
+	if LST(localTime, day, loc) < 12 || HRA(localTime, day, loc) < 0 {
 		return az
 	}
 
@@ -104,8 +115,8 @@ func Azimuth(localTime int, day int, lon float64, lat float64) float64 {
 // from the sun has to pass through to get to the ground at a time of day and
 // year. It is in standard units defined as the distance from the top of the
 // atmosphere to sea-level at noon being equal to 1.
-func AM(localTime int, day int, lon float64, lat float64) float64 {
-	theta := Zenith(localTime, day, lon, lat)
+func AM(localTime int, day int, loc Location) float64 {
+	theta := Zenith(localTime, day, loc)
 	x := 96.07995 - theta
 	if x < 0.0 {
 		return 0
@@ -120,44 +131,36 @@ func AM(localTime int, day int, lon float64, lat float64) float64 {
 // atmospheric and solar elevation/angle. A complete explanation of all the
 // constants used in this and related functions can be found here:
 // http://www.pveducation.org/pvcdrom/properties-of-sunlight/air-mass
-func ID(localTime int, day int, lon float64, lat float64, alt float64) float64 {
-	am := AM(localTime, day, lon, lat)
+func ID(localTime int, day int, loc Location) float64 {
+	am := AM(localTime, day, loc)
 	if am <= 0.0 {
 		return 0.0
 	}
 
 	p := math.Pow(am, 0.678)
-	return 1.353 * ((1.0-(0.14*alt))*math.Pow(0.7, p) + (0.14 * alt))
+	return 1.353 * ((1.0-(0.14*loc.Alt))*math.Pow(0.7, p) + (0.14 * loc.Alt))
 }
 
 // IG returns the Global Intensity; 1.1 * the direct inensity, as we get about
 // a 10% boost from scattering.
-func IG(localTime int, day int, lon float64, lat float64, alt float64) float64 {
-	return 1.1 * ID(localTime, day, lon, lat, alt)
+func IG(localTime int, day int, loc Location) float64 {
+	return 1.1 * ID(localTime, day, loc)
 }
 
 // PeakSolarHours returns the cumulative number of hours in a day, for a given
 // location, where 1kW of useful solar radiation reaches 1 m^2 of ground. So,
 // if for 12 hours only 0.5 kW reaches the ground, then there are 6 peak solar
 // hours.
-func PeakSolarHours(day int, lon float64, lat float64, alt float64) float64 {
+func PeakSolarHours(day int, loc Location) float64 {
 	// We step forward one hour at a time through the day, and add up the total
 	// amount of energy in kW/m^2
 	sum := 0.0
 	// 60*24 == number of minutes in a day
 	for i := 0; i < 60*24; i++ {
-		sum += IG(i, day, lon, lat, alt)
+		sum += IG(i, day, loc)
 	}
 
 	return sum / 60.0 / 24.0
-}
-
-// Location holds information about where in the world we are. City and State
-// are US specific.
-type Location struct {
-	Lat, Lon, Alt float64
-	City          string
-	State         string
 }
 
 func stringInSlice(a string, list []string) bool {
