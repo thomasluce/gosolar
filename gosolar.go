@@ -257,7 +257,8 @@ func FindLocation(apiKey string, location string) (Location, error) {
 		return l, err
 	}
 
-	l.Alt = elevations[0].Elevation
+	// We get things in meters, so convert to KM
+	l.Alt = elevations[0].Elevation / 1000.0
 
 	return l, nil
 }
@@ -295,7 +296,8 @@ func LatLonAltForLocation(apiKey string, location string) (float64, float64, flo
 		panic(err.Error())
 	}
 
-	elevation := elevations[0].Elevation
+	// We get things in meters, so convert to KM
+	elevation := elevations[0].Elevation / 1000.0
 
 	return lat, lon, elevation
 }

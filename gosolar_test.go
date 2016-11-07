@@ -5,6 +5,7 @@ import "testing"
 var loc Location = Location{
 	Lat:   47.1718,
 	Lon:   -122.5185,
+	Alt:   0.079,
 	City:  "Lakewood",
 	State: "WA",
 }
