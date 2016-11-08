@@ -167,6 +167,42 @@ func IG(localTime int, day int, loc Location) float64 {
 	return 1.1 * ID(localTime, day, loc)
 }
 
+// ModulePower returns the amount of sunlight, in Kw/m^2, that lands on a panel
+// that is tilted to the same angle as the latitude of the location (which is
+// optimal.)
+func ModulePower(localTime int, day int, loc Location) float64 {
+	e := Elevation(localTime, day, loc)
+	id := IG(localTime, day, loc)
+	sHoriz := id * math.Sin(e+DegToRad*loc.Lat)
+	return sHoriz / math.Sin(e)
+}
+
+// SunTime returns the amount of time that the sun is shining during the course
+// of a given day, in minutes.
+func SunTime(day int, loc Location) float64 {
+	return Sunset(day, loc) - Sunrise(day, loc)
+}
+
+// Sunrise returns the time of the sunrise in local-solar-time (not corrected) in
+// minutes past midnight for a given day.
+func Sunrise(day int, loc Location) float64 {
+	a := 1.0 / 0.25 * DegToRad
+	dec := Declination(day)
+	lat := loc.Lat * DegToRad
+	b := (-math.Sin(lat) * math.Sin(dec)) / (math.Cos(lat) * math.Cos(dec))
+	return (12 - (a * math.Acos(b) * RadToDeg)) * 60
+}
+
+// Sunset returns the time of the sunset in local-solar-time (not corrected) in
+// minutes past midnight for a given day.
+func Sunset(day int, loc Location) float64 {
+	a := 1.0 / 0.25 * DegToRad
+	dec := Declination(day)
+	lat := loc.Lat * DegToRad
+	b := (-math.Sin(lat) * math.Sin(dec)) / (math.Cos(lat) * math.Cos(dec))
+	return (12 + (a * math.Acos(b) * RadToDeg)) * 60
+}
+
 // PeakSolarHours returns the cumulative number of hours in a day, for a given
 // location, where 1kW of useful solar radiation reaches 1 m^2 of ground. So,
 // if for 12 hours only 0.5 kW reaches the ground, then there are 6 peak solar
@@ -174,11 +210,11 @@ func IG(localTime int, day int, loc Location) float64 {
 func PeakSolarHours(day int, loc Location) (sum float64) {
 	// We step forward one hour at a time through the day, and add up the total
 	// amount of energy in kW/m^2
-	for i := 0; i < 24; i++ {
-		sum += IG(i*60, day, loc)
+	sr := int(Sunrise(day, loc))
+	for i := sr; i < int(Sunset(day, loc)); i++ {
+		sum += IG(sr+i, day, loc)
 	}
-
-	return sum
+	return sum / 60
 }
 
 func stringInSlice(a string, list []string) bool {

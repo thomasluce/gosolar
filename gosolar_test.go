@@ -150,11 +150,45 @@ func TestAM(t *testing.T) {
 	}
 }
 
+func TestModulePower(t *testing.T) {
+	// For noon at the hight of summer, we should expect close to 1 kw/m^2
+	p := ModulePower(720, 171, loc)
+	if int(p) != 1 {
+		t.Errorf("Expected close to 1, got %f", p)
+	}
+}
+
+func TestSunrise(t *testing.T) {
+	// Sunrise on Jan. 1 should be close to 7:37 am (457 minutes).
+	// It actually changes depending on year, but we are taking some broad
+	// sweeps, here...
+	s := Sunrise(1, loc)
+	if int(s) != 457 {
+		t.Errorf("Expecting close to 457, got %f", s)
+	}
+}
+
+func TestSunset(t *testing.T) {
+	// 4:22 pm = 982 minutes
+	s := Sunset(1, loc)
+	if int(s) != 982 {
+		t.Errorf("Expecing close to 982, got %f", s)
+	}
+}
+
+func TestSuntime(t *testing.T) {
+	// Should get about 8.5 hours
+	s := SunTime(1, loc)
+	if int(s) != 525 {
+		t.Errorf("Expecting close to 525, got %f", s)
+	}
+}
+
 func TestPeakSolarHours(t *testing.T) {
-	// For the hight of summer, we should get somewhere around 12 PSH's (not
+	// For the hight of summer, we should get somewhere around 10 PSH's (not
 	// including weather conditions)
 	p := PeakSolarHours(171, loc)
-	if int(p) != 12 {
-		t.Errorf("Expected close to 12, got %f", p)
+	if int(p) != 10 {
+		t.Errorf("Expected close to 10, got %f", p)
 	}
 }
