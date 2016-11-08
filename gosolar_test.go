@@ -149,3 +149,12 @@ func TestAM(t *testing.T) {
 		t.Errorf("Expecting close to 2, got %f", am)
 	}
 }
+
+func TestPeakSolarHours(t *testing.T) {
+	// For the hight of summer, we should get somewhere around 12 PSH's (not
+	// including weather conditions)
+	p := PeakSolarHours(171, loc)
+	if int(p) != 12 {
+		t.Errorf("Expected close to 12, got %f", p)
+	}
+}

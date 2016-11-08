@@ -124,25 +124,6 @@ func Azimuth(localTime int, day int, loc Location) float64 {
 	return DegToRad*360 - theta
 
 	return theta
-
-	/*
-		theta := Zenith(localTime, day, loc)
-		sinDec := math.Sin(Declination(day))
-		cosTheta := math.Cos(theta)
-		cosDec := math.Cos(Declination(day))
-		sinTheta := math.Sin(theta)
-		cosH := math.Cos(HRA(localTime, day, loc))
-		a := Elevation(localTime, day, loc)
-
-		v := (sinDec*cosTheta - cosDec*sinTheta*cosH) / a
-		az := 1.0 / math.Cos(v)
-
-		if LST(localTime, day, loc) < 12 || HRA(localTime, day, loc) < 0 {
-			return az
-		}
-
-		return DegToRad*360.0 - az
-	*/
 }
 
 // AM returns the Air Mass, which is the amount of air that a beam of light
@@ -156,7 +137,7 @@ func AM(localTime int, day int, loc Location) float64 {
 		return 0
 	}
 
-	d := math.Cos(theta) + (DegToRad * 0.50572 * math.Pow(x, -1.6364))
+	d := math.Cos(theta) + (DegToRad * 0.50572 * math.Pow(x, DegToRad*-1.6364))
 	return 1.0 / d
 }
 
@@ -165,6 +146,8 @@ func AM(localTime int, day int, loc Location) float64 {
 // atmospheric and solar elevation/angle. A complete explanation of all the
 // constants used in this and related functions can be found here:
 // http://www.pveducation.org/pvcdrom/properties-of-sunlight/air-mass
+// This version assumes that the light from the sun is striking a surface
+// exactly perpendicular to the light.
 func ID(localTime int, day int, loc Location) float64 {
 	am := AM(localTime, day, loc)
 	if am <= 0.0 {
@@ -172,7 +155,10 @@ func ID(localTime int, day int, loc Location) float64 {
 	}
 
 	p := math.Pow(am, 0.678)
-	return 1.353 * ((1.0-(0.14*loc.Alt))*math.Pow(0.7, p) + (0.14 * loc.Alt))
+	p = math.Pow(0.7, p)
+	ah := 0.14 * loc.Alt
+
+	return 1.353 * ((1.0-ah)*p + ah)
 }
 
 // IG returns the Global Intensity; 1.1 * the direct inensity, as we get about
@@ -185,16 +171,14 @@ func IG(localTime int, day int, loc Location) float64 {
 // location, where 1kW of useful solar radiation reaches 1 m^2 of ground. So,
 // if for 12 hours only 0.5 kW reaches the ground, then there are 6 peak solar
 // hours.
-func PeakSolarHours(day int, loc Location) float64 {
+func PeakSolarHours(day int, loc Location) (sum float64) {
 	// We step forward one hour at a time through the day, and add up the total
 	// amount of energy in kW/m^2
-	sum := 0.0
-	// 60*24 == number of minutes in a day
-	for i := 0; i < 60*24; i++ {
-		sum += IG(i, day, loc)
+	for i := 0; i < 24; i++ {
+		sum += IG(i*60, day, loc)
 	}
 
-	return sum / 60.0 / 24.0
+	return sum
 }
 
 func stringInSlice(a string, list []string) bool {
